@@ -168,18 +168,28 @@ const Home = () => {
           <Section bg="bg-canvas">
             <SectionHeading eyebrow="shop by" title="Our Little Categories" center />
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-              {categories.map((cat) => (
-                <Link
-                  key={cat._id}
-                  to={`/shop?category=${cat._id}`}
-                  className={`${CATEGORY_STYLES[cat.name]?.bg || 'bg-blush'} rounded-3xl p-6 text-center hover:-translate-y-1 transition-transform shadow-soft group`}
-                >
-                  <div className="mb-3 group-hover:scale-110 transition-transform inline-block">
-                    {CATEGORY_STYLES[cat.name]?.icon || <Sparkles size={40} className="text-ink" />}
-                  </div>
-                  <h3 className="font-display font-semibold text-ink text-sm sm:text-base">{cat.name}</h3>
-                </Link>
-              ))}
+              {categories
+                .filter((cat) => CATEGORY_STYLES[cat.name])
+                .map((cat) => {
+                  const styleInfo = CATEGORY_STYLES[cat.name];
+                  return (
+                    <Link
+                      key={cat._id}
+                      to={`/shop?category=${cat._id}`}
+                      className={`${styleInfo.bg} rounded-3xl p-6 text-center hover:-translate-y-1 transition-transform shadow-soft group`}
+                    >
+                      <div className="mb-3 group-hover:scale-110 transition-transform inline-block">
+                        {styleInfo.icon}
+                      </div>
+                      <h3 className="font-display font-semibold text-ink text-sm sm:text-base">{cat.name}</h3>
+                    </Link>
+                  );
+                })}
+            </div>
+            <div className="text-center mt-10">
+              <Link to="/shop" className="btn-sticker bg-white text-ink px-7 py-3.5 hover:bg-butter inline-flex items-center gap-2 text-sm sm:text-base">
+                Explore More Categories <ArrowRight size={18} />
+              </Link>
             </div>
           </Section>
 
@@ -214,7 +224,7 @@ const Home = () => {
               <SectionHeading eyebrow="customer favourites" title="Best Sellers" center />
               <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
                 {collections.bestSellers.map((p) => <ProductCard key={p._id} product={p} />)}
-            </div>
+              </div>
             </Section>
           )}
 
@@ -248,42 +258,42 @@ const Home = () => {
                     />
                   </div>
                 ))}
-            </div>
-          </div>
-        </Section>
-
-        {/* ---------------- INSTAGRAM ---------------- */}
-        <Section bg="bg-canvas">
-          <SectionHeading eyebrow="follow along" title="Utsaah on Instagram" subtitle="Behind-the-scenes crafting, new drops &amp; happy customers." center />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="aspect-square rounded-3xl bg-blush flex items-center justify-center overflow-hidden relative group">
-                <img
-                  src={`/uinsta/u${i}.png`}
-                  alt={`Utsaah Instagram ${i}`}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-ink/0 group-hover:bg-ink/40 transition-colors flex items-center justify-center">
-                  <InstagramIcon className="text-white opacity-0 group-hover:opacity-100 transition-opacity" size={26} />
-                </div>
               </div>
-            ))}
-          </div>
-          <div className="text-center mt-8">
-            <a
-              href="https://www.instagram.com/utsaah_._"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 font-display font-semibold text-rani hover:text-rani-dark"
-            >
-              <InstagramIcon size={18} /> @utsaah_._ — Follow for more
-            </a>
-          </div>
-        </Section>
-      </>
-    )}
-  </div>
- );
-};
+            </div>
+          </Section>
 
+          {/* ---------------- INSTAGRAM ---------------- */}
+          <Section bg="bg-canvas">
+            <SectionHeading eyebrow="follow along" title="Utsaah on Instagram" subtitle="Behind-the-scenes crafting, new drops &amp; happy customers." center />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="aspect-square rounded-3xl bg-blush flex items-center justify-center overflow-hidden relative group">
+                  <img
+                    src={`/uinsta/u${i}.png`}
+                    alt={`Utsaah Instagram ${i}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-ink/0 group-hover:bg-ink/40 transition-colors flex items-center justify-center">
+                    <InstagramIcon className="text-white opacity-0 group-hover:opacity-100 transition-opacity" size={26} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="text-center mt-8">
+              <a
+                href="https://www.instagram.com/utsaah_._"   
+                target="_blank"   
+                rel="noopener noreferrer"   
+                className="inline-flex items-center gap-2 font-display font-semibold text-rani hover:text-rani-dark"   
+              >   
+                <InstagramIcon size={18} /> @utsaah_._ — Follow for more   
+              </a>   
+            </div>   
+          </Section>   
+        </>   
+      )}   
+    </div>   
+  );   
+};   
+   
 export default Home;
