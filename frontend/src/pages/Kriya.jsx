@@ -97,8 +97,27 @@ const Kriya = () => {
   const bringForward = () => selected && handleChangeElement(selected.uid, { zIndex: zCounter.current++ });
   const sendBackward = () => {
     if (!selected) return;
-    const minZ = Math.min(0, ...placed.map((el) => el.zIndex));
-    handleChangeElement(selected.uid, { zIndex: minZ - 1 });
+
+    const sorted = [...placed].sort((a, b) => a.zIndex - b.zIndex);
+    const currentIndex = sorted.findIndex((el) => el.uid === selected.uid);
+
+    if (currentIndex <= 0) return;
+
+    const itemBelow = sorted[currentIndex - 1];
+
+    setPlaced((prev) =>
+      prev.map((el) => {
+        if (el.uid === selected.uid) {
+          return { ...el, zIndex: itemBelow.zIndex };
+        }
+
+        if (el.uid === itemBelow.uid) {
+          return { ...el, zIndex: selected.zIndex };
+        }
+
+        return el;
+      })
+    );
   };
   const flipSelected = () => selected && handleChangeElement(selected.uid, { flipX: !selected.flipX });
   const resetRotation = () => selected && handleChangeElement(selected.uid, { rotation: 0 });
@@ -178,7 +197,7 @@ const Kriya = () => {
 
       <div className="text-center mb-8">
         <span className="inline-flex items-center gap-1.5 bg-blush px-3.5 py-1.5 rounded-full text-xs font-display font-semibold text-rani mb-4">
-          <Sparkles size={14} /> Kriya — Made by You
+          <Sparkles size={14} /> Kriya — Made for You
         </span>
         <h1 className="font-display font-bold text-4xl text-ink mb-3">Design Your Own Bouquet</h1>
         <p className="text-ink/60 max-w-lg mx-auto">
