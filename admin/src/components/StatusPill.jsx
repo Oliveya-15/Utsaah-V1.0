@@ -1,6 +1,12 @@
 const COLORS = {
   // order statuses
   'Order Received': 'bg-blush text-ink/70',
+  'Awaiting Payment': 'bg-butter text-marigold-dark',
+  'Payment Reported': 'bg-lavender text-indigo_ink',
+  'Payment Declined': 'bg-rani/15 text-rani-dark',
+  Requested: 'bg-blush text-ink/70',
+  Approved: 'bg-mint text-mehendi-dark',
+  Rejected: 'bg-ink/10 text-ink/50',
   'Payment Successful': 'bg-mint text-mehendi-dark',
   'Confirmation Sent': 'bg-lavender text-indigo_ink',
   'Acknowledgement Pending': 'bg-butter text-marigold-dark',

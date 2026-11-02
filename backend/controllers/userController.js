@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import Address from '../models/Address.js';
 import Order from '../models/Order.js';
+import ReturnRequest from '../models/ReturnRequest.js';
 
 // @desc Update own profile
 // @route PUT /api/users/profile
@@ -93,10 +94,23 @@ export const deleteAddress = async (req, res) => {
 export const getWallet = async (req, res) => {
   const user = await User.findById(req.user._id);
   const walletOrders = await Order.find({ user: req.user._id, walletUsed: { $gt: 0 } })
-    .select('orderNumber walletUsed createdAt')
+    .select('orderNumber walletUsed createdAt orderStatus')
     .sort({ createdAt: -1 });
+
+  // Money that actually reached the wallet: only refunds the admin has processed.
+  const credits = await ReturnRequest.find({ user: req.user._id, walletCredited: { $gt: 0 } })
+    .populate('order', 'orderNumber')
+    .sort({ walletCreditedAt: -1 });
+
   res.json({
     balance: user.walletBalance,
     usageHistory: walletOrders,
+    creditHistory: credits.map((c) => ({
+      _id: c._id,
+      orderNumber: c.order?.orderNumber,
+      amount: c.walletCredited,
+      type: c.type,
+      date: c.walletCreditedAt || c.updatedAt,
+    })),
   });
 };

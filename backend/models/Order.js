@@ -15,6 +15,7 @@ const orderItemSchema = new mongoose.Schema(
 export const ORDER_STATUSES = [
   'Order Received',
   'Payment Reported',
+  'Payment Declined',
   'Payment Successful',
   'Confirmation Sent',
   'Acknowledgement Pending',

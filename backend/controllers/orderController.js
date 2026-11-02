@@ -5,6 +5,7 @@ import Coupon from '../models/Coupon.js';
 import User from '../models/User.js';
 import Address from '../models/Address.js';
 import Settings from '../models/Settings.js';
+import ReturnRequest from '../models/ReturnRequest.js';
 import { notifyUser, notifyAdmin } from '../utils/notify.js';
 
 const GIFT_WRAP_COST = 49;
@@ -158,8 +159,12 @@ export const reportPayment = async (req, res) => {
   if (order.user.toString() !== req.user._id.toString()) return res.status(403).json({ message: 'Not authorized' });
   if (order.paymentStatus === 'paid') return res.status(400).json({ message: 'This order is already marked as paid' });
   if (order.orderStatus === 'Cancelled') return res.status(400).json({ message: 'This order was cancelled' });
+  if (order.orderStatus === 'Payment Reported') {
+    return res.status(400).json({ message: "You've already let us know — we're verifying your payment." });
+  }
 
   order.orderStatus = 'Payment Reported';
+  order.paymentStatus = 'pending'; // paying again after a declined payment puts it back to pending
   order.statusHistory.push({ status: 'Payment Reported', note: 'Customer confirmed payment was sent' });
   await order.save();
 
@@ -176,6 +181,10 @@ export const reportPayment = async (req, res) => {
 export const verifyPayment = async (req, res) => {
   const order = await Order.findById(req.params.id);
   if (!order) return res.status(404).json({ message: 'Order not found' });
+  if (order.paymentStatus === 'paid') return res.status(400).json({ message: 'This payment is already verified' });
+  if (order.orderStatus === 'Cancelled') {
+    return res.status(400).json({ message: "This order was cancelled, so its payment can't be verified." });
+  }
 
   order.paymentStatus = 'paid';
   order.orderStatus = 'Payment Successful';
@@ -187,6 +196,33 @@ export const verifyPayment = async (req, res) => {
     userId: order.user,
     title: 'Payment confirmed! 🎉',
     message: `We've confirmed payment for order #${order.orderNumber}. We're getting started on it now!`,
+    type: 'payment',
+  });
+
+  res.json(order);
+};
+
+// @desc Admin says the money did NOT arrive. The customer is told, and can pay again
+//       (or cancel). The order does not move forward until payment is verified.
+// @route PUT /api/orders/:id/decline-payment
+export const declinePayment = async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) return res.status(404).json({ message: 'Order not found' });
+  if (order.paymentStatus === 'paid') return res.status(400).json({ message: "This payment was already verified, so it can't be declined." });
+  if (order.orderStatus === 'Cancelled') return res.status(400).json({ message: 'This order was cancelled' });
+  if (order.orderStatus === 'Payment Declined') return res.status(400).json({ message: 'This payment is already declined' });
+
+  const reason = String(req.body.reason || '').trim();
+
+  order.paymentStatus = 'failed';
+  order.orderStatus = 'Payment Declined';
+  order.statusHistory.push({ status: 'Payment Declined', note: reason || 'Payment could not be confirmed' });
+  await order.save();
+
+  notifyUser({
+    userId: order.user,
+    title: 'Payment not received',
+    message: `We couldn't confirm your payment for order #${order.orderNumber}${reason ? ` (${reason})` : ''}. If you've already paid, please message us on WhatsApp. Otherwise you can pay again from your order page.`,
     type: 'payment',
   });
 
@@ -212,16 +248,28 @@ export const getOrderById = async (req, res) => {
 };
 
 // @desc Cancel order (only before Production Started)
+//       - Never paid  -> just cancelled. Nothing was received, so nothing is refunded
+//                        (any wallet balance the customer put towards it is given back).
+//       - Already paid -> cancelled, and a refund request is created for the admin.
+//                        Money only reaches the wallet when the admin processes that refund.
 // @route PUT /api/orders/:id/cancel
 export const cancelOrder = async (req, res) => {
   const order = await Order.findById(req.params.id);
   if (!order) return res.status(404).json({ message: 'Order not found' });
   if (order.user.toString() !== req.user._id.toString()) return res.status(403).json({ message: 'Not authorized' });
 
-  const cancellableStatuses = ['Order Received', 'Payment Successful', 'Confirmation Sent', 'Acknowledgement Pending'];
+  if (order.orderStatus === 'Payment Reported') {
+    return res.status(400).json({
+      message: "You've told us you've paid for this order and we're verifying it. Please wait for our confirmation, or message us on WhatsApp if you'd like to cancel.",
+    });
+  }
+
+  const cancellableStatuses = ['Order Received', 'Payment Declined', 'Payment Successful', 'Confirmation Sent', 'Acknowledgement Pending'];
   if (!cancellableStatuses.includes(order.orderStatus)) {
     return res.status(400).json({ message: 'This order can no longer be cancelled as production has already started (handmade products are made specifically for each order).' });
   }
+
+  const wasPaid = order.paymentStatus === 'paid';
 
   order.orderStatus = 'Cancelled';
   order.cancelReason = req.body.reason || 'Cancelled by customer';
@@ -229,15 +277,43 @@ export const cancelOrder = async (req, res) => {
   order.statusHistory.push({ status: 'Cancelled', note: order.cancelReason });
   await order.save();
 
-  // Refund full amount to wallet automatically for cancellations (instant)
-  await User.findByIdAndUpdate(order.user, { $inc: { walletBalance: order.totalAmount } });
-
-  notifyUser({
-    userId: order.user,
-    title: 'Order cancelled',
-    message: `Your order #${order.orderNumber} has been cancelled and ₹${order.totalAmount} has been credited to your Utsaah Wallet.`,
-    type: 'refund',
-  });
+  if (!wasPaid) {
+    // No payment was ever received, so there is nothing to refund.
+    // Only hand back wallet balance the customer had put towards this order.
+    if (order.walletUsed > 0) {
+      await User.findByIdAndUpdate(order.user, { $inc: { walletBalance: order.walletUsed } });
+    }
+    notifyUser({
+      userId: order.user,
+      title: 'Order cancelled',
+      message: `Your order #${order.orderNumber} has been cancelled. No payment had been received, so nothing was charged.${order.walletUsed > 0 ? ` ₹${order.walletUsed} of wallet balance has been returned to your wallet.` : ''}`,
+      type: 'order',
+    });
+  } else {
+    const refundDue = order.totalAmount + (order.walletUsed || 0);
+    if (refundDue > 0) {
+      await ReturnRequest.create({
+        order: order._id,
+        user: order.user,
+        type: 'cancellation',
+        reason: 'Order cancelled by customer',
+        description: order.cancelReason,
+        status: 'Approved',
+        approvedAt: new Date(),
+        refundAmount: refundDue,
+      });
+      notifyAdmin({
+        title: `Refund needed: order #${order.orderNumber} was cancelled`,
+        message: `${req.user.name} cancelled a PAID order. ₹${refundDue} needs to be refunded. Open Admin → Returns & Refunds to process it.`,
+      });
+    }
+    notifyUser({
+      userId: order.user,
+      title: 'Order cancelled — refund on its way',
+      message: `Your order #${order.orderNumber} has been cancelled. Our team will process your refund of ₹${refundDue} shortly, and we'll let you know as soon as it's done.`,
+      type: 'refund',
+    });
+  }
 
   res.json(order);
 };
@@ -281,6 +357,15 @@ export const updateOrderStatus = async (req, res) => {
   if (!order) return res.status(404).json({ message: 'Order not found' });
 
   const { orderStatus, note, shippingProvider, courierPartner, trackingNumber, adminNote, estimatedDeliveryDate } = req.body;
+
+  // An order can only move forward once its payment is verified, and a cancelled order stays cancelled.
+  const statusChanged = orderStatus && orderStatus !== order.orderStatus;
+  if (statusChanged && order.orderStatus === 'Cancelled') {
+    return res.status(400).json({ message: "This order was cancelled, so it can't be moved to another status." });
+  }
+  if (statusChanged && order.paymentStatus !== 'paid' && !['Order Received', 'Payment Reported', 'Payment Declined'].includes(orderStatus)) {
+    return res.status(400).json({ message: 'Verify the payment first (use "Mark Payment Verified") before moving this order forward.' });
+  }
 
   if (orderStatus && ORDER_STATUSES.includes(orderStatus)) {
     order.orderStatus = orderStatus;

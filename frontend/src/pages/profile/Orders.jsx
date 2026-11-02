@@ -4,9 +4,13 @@ import { Helmet } from 'react-helmet-async';
 import { Package, ChevronRight } from 'lucide-react';
 import api, { resolveImage } from '../../api/axios.js';
 import Loader from '../../components/Loader.jsx';
+import { getDisplayStatus, STATUS_HINTS } from '../../utils/orderStatus.js';
 
 const STATUS_COLORS = {
   'Order Received': 'bg-blush text-ink/70',
+  'Awaiting Payment': 'bg-butter text-marigold-dark',
+  'Payment Reported': 'bg-lavender text-indigo_ink',
+  'Payment Declined': 'bg-rani/10 text-rani',
   'Payment Successful': 'bg-mint text-mehendi-dark',
   'Production Started': 'bg-butter text-marigold-dark',
   'Shipped': 'bg-lavender text-indigo_ink',
@@ -38,7 +42,9 @@ const Orders = () => {
   return (
     <div className="space-y-4">
       <Helmet><title>My Orders — Utsaah</title></Helmet>
-      {orders.map((order) => (
+      {orders.map((order) => {
+        const status = getDisplayStatus(order);
+        return (
         <Link
           key={order._id}
           to={`/profile/orders/${order._id}`}
@@ -54,13 +60,15 @@ const Orders = () => {
           <div className="flex-1 min-w-0">
             <p className="font-display font-semibold text-ink text-sm">#{order.orderNumber}</p>
             <p className="text-xs text-ink/50">{order.items.length} item{order.items.length !== 1 ? 's' : ''} · ₹{order.totalAmount} · {new Date(order.createdAt).toLocaleDateString()}</p>
-            <span className={`inline-block mt-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[order.orderStatus] || 'bg-blush text-ink/60'}`}>
-              {order.orderStatus}
+            <span className={`inline-block mt-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[status] || 'bg-blush text-ink/60'}`}>
+              {status}
             </span>
+            {STATUS_HINTS[status] && <p className="text-[11px] text-ink/50 mt-1">{STATUS_HINTS[status]}</p>}
           </div>
           <ChevronRight size={18} className="text-ink/30 shrink-0" />
         </Link>
-      ))}
+        );
+      })}
     </div>
   );
 };

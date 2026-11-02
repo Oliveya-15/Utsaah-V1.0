@@ -7,11 +7,20 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useCart } from '../../context/CartContext.jsx';
 import Loader from '../../components/Loader.jsx';
 import UpiQrPayment from '../../components/UpiQrPayment.jsx';
+import { getDisplayStatus } from '../../utils/orderStatus.js';
 
-const CANCELLABLE = ['Order Received', 'Payment Reported', 'Payment Successful', 'Confirmation Sent', 'Acknowledgement Pending'];
+// 'Payment Reported' is not cancellable: the customer says they've paid and we're still verifying it.
+const CANCELLABLE = ['Order Received', 'Payment Declined', 'Payment Successful', 'Confirmation Sent', 'Acknowledgement Pending'];
+
+const STATUS_PILL = {
+  'Awaiting Payment': 'bg-butter text-marigold-dark',
+  'Payment Reported': 'bg-lavender text-indigo_ink',
+  'Payment Declined': 'bg-rani/10 text-rani',
+  Cancelled: 'bg-ink/10 text-ink/50',
+};
 const MAIN_STEPS = ['Order Received', 'Payment Successful', 'Production Started', 'Packed', 'Shipped', 'Delivered'];
 
-const trackerStatusFor = (status) => (status === 'Payment Reported' ? 'Order Received' : status);
+const trackerStatusFor = (status) => (['Payment Reported', 'Payment Declined'].includes(status) ? 'Order Received' : status);
 
 const OrderDetail = () => {
   const { id } = useParams();
@@ -62,10 +71,14 @@ const OrderDetail = () => {
   };
 
   const handleCancel = async () => {
-    if (!window.confirm('Are you sure you want to cancel this order?')) return;
+    const wasPaid = order.paymentStatus === 'paid';
+    const confirmText = wasPaid
+      ? 'Cancel this order? Your payment will be refunded once our team has processed it.'
+      : "Cancel this order? You haven't paid yet, so nothing will be charged. (If you've already paid, don't cancel. Tap \"I've Paid\" instead.)";
+    if (!window.confirm(confirmText)) return;
     try {
       await api.put(`/orders/${id}/cancel`, { reason: 'Cancelled by customer' });
-      showToast('Order cancelled — refund credited to wallet', 'success');
+      showToast(wasPaid ? 'Order cancelled. Our team will process your refund shortly.' : 'Order cancelled', 'success');
       fetchOrder();
     } catch (err) {
       showToast(err.response?.data?.message || err.message, 'error');
@@ -118,6 +131,11 @@ const OrderDetail = () => {
   if (!order) return <p className="text-center py-20 text-ink/50">Order not found.</p>;
 
   const currentStepIndex = MAIN_STEPS.indexOf(trackerStatusFor(order.orderStatus));
+  const displayStatus = getDisplayStatus(order);
+  const declineNote = order.statusHistory?.slice().reverse().find((h) => h.status === 'Payment Declined')?.note;
+  // Show the pay-now section whenever the order is still unpaid (not yet paid, or a payment was declined).
+  const canPay = ['pending', 'failed'].includes(order.paymentStatus) && ['Order Received', 'Payment Declined'].includes(order.orderStatus);
+  const refundTotal = (order.totalAmount || 0) + (order.walletUsed || 0);
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
@@ -127,6 +145,9 @@ const OrderDetail = () => {
         <div>
           <h1 className="font-display font-bold text-2xl text-ink">Order #{order.orderNumber}</h1>
           <p className="text-sm text-ink/50">Placed on {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          {STATUS_PILL[displayStatus] && (
+            <span className={`inline-block mt-2 text-[11px] font-semibold px-2.5 py-1 rounded-full ${STATUS_PILL[displayStatus]}`}>{displayStatus}</span>
+          )}
         </div>
         <div className="flex gap-2">
           <button onClick={handleReorder} className="btn-sticker bg-white shadow-soft text-ink px-4 py-2.5 text-sm flex items-center gap-1.5">
@@ -178,7 +199,10 @@ const OrderDetail = () => {
 
       {order.orderStatus === 'Cancelled' && (
         <div className="bg-ink/5 rounded-2xl p-4 mb-6 text-sm text-ink/60">
-          This order was cancelled{order.cancelReason ? `: ${order.cancelReason}` : '.'} Refund credited to your wallet.
+          This order was cancelled{order.cancelReason ? `: ${order.cancelReason}` : '.'}{' '}
+          {order.paymentStatus === 'paid' && `Your refund of ₹${refundTotal} is being processed by our team. It will appear in your wallet once the refund is done (see Returns & Refunds).`}
+          {order.paymentStatus === 'refunded' && 'Your refund has been processed. See Returns & Refunds for details.'}
+          {!['paid', 'refunded'].includes(order.paymentStatus) && 'No payment was taken for this order.'}
         </div>
       )}
 
@@ -189,6 +213,18 @@ const OrderDetail = () => {
       )}
 
       {order.paymentStatus === 'pending' && order.orderStatus === 'Order Received' && (
+        <div className="bg-butter rounded-2xl p-4 mb-4 text-sm text-marigold-dark font-semibold flex items-center gap-2">
+          <Landmark size={16} /> Payment pending: your order is reserved, but we haven't received your payment yet.
+        </div>
+      )}
+
+      {order.orderStatus === 'Payment Declined' && (
+        <div className="bg-rani/10 rounded-2xl p-4 mb-4 text-sm text-rani font-semibold">
+          We couldn't confirm your payment{declineNote ? ` (${declineNote})` : ''}. If you've already paid, please message us on WhatsApp. Otherwise you can pay again below.
+        </div>
+      )}
+
+      {canPay && (
         <div className="mb-6">
           {order.paymentMethod === 'upi' && settings?.upiConfigured ? (
             <UpiQrPayment
@@ -343,12 +379,14 @@ const OrderDetail = () => {
             )}
             <hr className="stitch-rule my-2" />
             <div className="flex justify-between font-display font-bold text-ink">
-              <span>{order.paymentStatus === 'paid' ? 'Total Paid' : 'Total Due'}</span>
+              <span>{order.paymentStatus === 'paid' ? 'Total Paid' : order.paymentStatus === 'refunded' ? 'Total (Refunded)' : 'Total Due'}</span>
               <span>₹{order.totalAmount}</span>
             </div>
           </div>
           <p className="text-xs text-ink/40 mt-3">
-            {order.paymentMethod === 'upi' ? 'Paid via UPI' : 'Confirmed via WhatsApp'}
+            {order.paymentStatus === 'paid' && (order.totalAmount === 0 ? 'Paid with wallet balance' : order.paymentMethod === 'upi' ? 'Paid via UPI' : 'Confirmed via WhatsApp')}
+            {order.paymentStatus === 'refunded' && 'Refunded'}
+            {!['paid', 'refunded'].includes(order.paymentStatus) && 'Payment pending'}
             {order.upiOwnerUsed && ` · to ${order.upiOwnerUsed}`}
             {order.paymentStatus === 'paid' && ' · ✅ Verified'}
           </p>

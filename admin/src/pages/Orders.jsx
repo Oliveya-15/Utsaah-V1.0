@@ -4,11 +4,15 @@ import { ChevronRight, Search } from 'lucide-react';
 import api from '../api/axios.js';
 import Loader from '../components/Loader.jsx';
 import StatusPill from '../components/StatusPill.jsx';
+import { getDisplayStatus } from '../utils/orderStatus.js';
 
 const STATUS_FILTERS = [
-  'All', 'Order Received', 'Payment Successful', 'Production Started', 'Packed',
+  'All', 'Order Received', 'Payment Reported', 'Payment Declined', 'Payment Successful', 'Production Started', 'Packed',
   'Shipped', 'Delivered', 'Return Requested', 'Cancelled',
 ];
+
+// An unpaid "Order Received" order is really waiting for payment, so label it that way.
+const FILTER_LABELS = { 'Order Received': 'Awaiting Payment' };
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
@@ -33,7 +37,7 @@ const Orders = () => {
   return (
     <div>
       <h1 className="font-display font-bold text-3xl text-ink mb-1">Orders</h1>
-      <p className="text-ink/50 text-sm mb-6">{orders.length} orders {filter !== 'All' && `· ${filter}`}</p>
+      <p className="text-ink/50 text-sm mb-6">{orders.length} orders {filter !== 'All' && `· ${FILTER_LABELS[filter] || filter}`}</p>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {STATUS_FILTERS.map((s) => (
@@ -42,7 +46,7 @@ const Orders = () => {
             onClick={() => setFilter(s)}
             className={`px-3.5 py-1.5 rounded-full text-xs font-display font-semibold whitespace-nowrap ${filter === s ? 'bg-rani text-white' : 'bg-white text-ink/60 shadow-soft'}`}
           >
-            {s}
+            {FILTER_LABELS[s] || s}
           </button>
         ))}
       </div>
@@ -75,7 +79,7 @@ const Orders = () => {
                   <td className="p-4 text-ink/70">{o.user?.name}</td>
                   <td className="p-4 text-ink/60">{o.items.length}</td>
                   <td className="p-4 font-semibold text-ink">₹{o.totalAmount}</td>
-                  <td className="p-4"><StatusPill status={o.orderStatus} /></td>
+                  <td className="p-4"><StatusPill status={getDisplayStatus(o)} /></td>
                   <td className="p-4 text-ink/50 text-xs">{new Date(o.createdAt).toLocaleDateString()}</td>
                   <td className="p-4">
                     <Link to={`/orders/${o._id}`} className="w-8 h-8 rounded-full hover:bg-blush flex items-center justify-center text-ink/40 hover:text-rani ml-auto">

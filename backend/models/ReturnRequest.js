@@ -4,6 +4,8 @@ const returnRequestSchema = new mongoose.Schema(
   {
     order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    // 'return' = customer returned a delivered order; 'cancellation' = customer cancelled an order that was already paid
+    type: { type: String, enum: ['return', 'cancellation'], default: 'return' },
     reason: { type: String, required: true },
     description: { type: String, default: '' },
     images: [{ type: String }],
@@ -25,6 +27,9 @@ const returnRequestSchema = new mongoose.Schema(
       default: 'not_started',
     },
     refundProcessedAt: { type: Date },
+    // How much of this refund was put into the customer's wallet, and when (drives the wallet history)
+    walletCredited: { type: Number, default: 0 },
+    walletCreditedAt: { type: Date },
   },
   { timestamps: true }
 );

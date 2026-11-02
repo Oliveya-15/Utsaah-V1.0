@@ -47,7 +47,7 @@ export const requestReturn = async (req, res) => {
 // @desc Get my returns
 // @route GET /api/returns/my
 export const getMyReturns = async (req, res) => {
-  const returns = await ReturnRequest.find({ user: req.user._id }).populate('order', 'orderNumber totalAmount').sort({ createdAt: -1 });
+  const returns = await ReturnRequest.find({ user: req.user._id }).populate('order', 'orderNumber totalAmount walletUsed').sort({ createdAt: -1 });
   res.json(returns);
 };
 
@@ -56,8 +56,8 @@ export const getMyReturns = async (req, res) => {
 // @route GET /api/returns/admin/all
 export const getAllReturnsAdmin = async (req, res) => {
   const returns = await ReturnRequest.find()
-    .populate('user', 'name email')
-    .populate('order', 'orderNumber totalAmount items')
+    .populate('user', 'name email phone')
+    .populate('order', 'orderNumber totalAmount walletUsed items')
     .sort({ createdAt: -1 });
   res.json(returns);
 };
@@ -84,7 +84,7 @@ export const decideReturn = async (req, res) => {
     userId: returnReq.user,
     title: `Return request ${decision.toLowerCase()}`,
     message: decision === 'Approved'
-      ? 'Your return request has been approved. Please choose your refund method from your Returns page.'
+      ? 'Your return request has been approved. Our team will process your refund shortly and let you know once it is done.'
       : 'Your return request was not approved. Contact support if you have questions.',
     type: 'return',
   });
@@ -92,44 +92,70 @@ export const decideReturn = async (req, res) => {
   res.json(returnReq);
 };
 
-// @desc Admin (or customer, via choosing method) processes the refund
+// @desc Admin processes the refund. This is the ONLY place money is put into a
+//       customer's wallet for a return / cancellation refund.
+//       - wallet            -> everything (UPI amount + any wallet balance used) goes to the wallet now
+//       - original_payment  -> the UPI amount is sent back manually by the admin (mark it complete
+//                              afterwards); any wallet balance the customer used goes back to the wallet now
 // @route PUT /api/returns/:id/refund
 export const processRefund = async (req, res) => {
   const { refundMethod } = req.body; // 'wallet' | 'original_payment'
+  if (!['wallet', 'original_payment'].includes(refundMethod)) {
+    return res.status(400).json({ message: 'Please choose a refund method' });
+  }
+
   const returnReq = await ReturnRequest.findById(req.params.id).populate('order');
   if (!returnReq) return res.status(404).json({ message: 'Return request not found' });
-  if (returnReq.status !== 'Approved') return res.status(400).json({ message: 'Return must be approved before processing a refund' });
+  if (returnReq.status !== 'Approved') {
+    return res.status(400).json({ message: 'Only approved requests can be refunded' });
+  }
 
-  const refundAmount = returnReq.order.totalAmount;
-  returnReq.refundAmount = refundAmount;
-  returnReq.refundMethod = refundMethod;
+  const order = returnReq.order;
+  const cashPaid = order.totalAmount || 0; // what the customer actually paid via UPI
+  const walletPortion = order.walletUsed || 0; // what they paid from their wallet
+  // If nothing was paid by UPI there is nothing to send back, so it all goes to the wallet.
+  const method = cashPaid === 0 ? 'wallet' : refundMethod;
 
-  if (refundMethod === 'wallet') {
-    await User.findByIdAndUpdate(returnReq.user, { $inc: { walletBalance: refundAmount } });
+  const walletCredit = method === 'wallet' ? cashPaid + walletPortion : walletPortion;
+  const now = new Date();
+
+  if (walletCredit > 0) {
+    await User.findByIdAndUpdate(returnReq.user, { $inc: { walletBalance: walletCredit } });
+    returnReq.walletCredited = walletCredit;
+    returnReq.walletCreditedAt = now;
+  }
+
+  returnReq.refundMethod = method;
+  returnReq.refundAmount = method === 'wallet' ? walletCredit : cashPaid;
+  if (method === 'wallet') {
     returnReq.refundStatus = 'processed';
     returnReq.status = 'Refund Completed';
-    returnReq.completedAt = new Date();
-    returnReq.refundProcessedAt = new Date();
+    returnReq.completedAt = now;
+    returnReq.refundProcessedAt = now;
   } else {
-    // original payment method — simulated as pending, to be marked completed by admin after actual bank refund
     returnReq.refundStatus = 'pending';
     returnReq.status = 'Refund Initiated';
   }
   await returnReq.save();
 
-  const order = await Order.findById(returnReq.order._id);
-  if (order) {
-    order.orderStatus = returnReq.status;
-    order.statusHistory.push({ status: order.orderStatus, note: `Refund via ${refundMethod}` });
-    await order.save();
+  const orderDoc = await Order.findById(order._id);
+  if (orderDoc) {
+    // A cancelled order stays "Cancelled"; only a returned order moves on to the refund statuses.
+    if (returnReq.type === 'return') orderDoc.orderStatus = returnReq.status;
+    if (method === 'wallet') orderDoc.paymentStatus = 'refunded';
+    orderDoc.statusHistory.push({
+      status: returnReq.status,
+      note: method === 'wallet' ? `₹${walletCredit} refunded to the customer's wallet` : `₹${cashPaid} to be sent back via UPI`,
+    });
+    await orderDoc.save();
   }
 
   notifyUser({
     userId: returnReq.user,
     title: 'Refund update',
-    message: refundMethod === 'wallet'
-      ? `₹${refundAmount} has been credited instantly to your Utsaah Wallet.`
-      : `Your refund of ₹${refundAmount} to your original payment method has been initiated (5–7 business days).`,
+    message: method === 'wallet'
+      ? `₹${walletCredit} for order #${order.orderNumber} has been added to your Utsaah Wallet.`
+      : `Your refund of ₹${cashPaid} for order #${order.orderNumber} is being sent back to your original payment method. We'll let you know once it's sent.${walletPortion > 0 ? ` ₹${walletPortion} of wallet balance has been returned to your wallet.` : ''}`,
     type: 'refund',
   });
 
@@ -141,10 +167,30 @@ export const processRefund = async (req, res) => {
 export const markRefundCompleted = async (req, res) => {
   const returnReq = await ReturnRequest.findById(req.params.id);
   if (!returnReq) return res.status(404).json({ message: 'Return request not found' });
+  if (returnReq.status !== 'Refund Initiated') {
+    return res.status(400).json({ message: 'There is no pending refund to complete' });
+  }
+
   returnReq.refundStatus = 'processed';
   returnReq.status = 'Refund Completed';
   returnReq.completedAt = new Date();
   returnReq.refundProcessedAt = new Date();
   await returnReq.save();
+
+  const order = await Order.findById(returnReq.order);
+  if (order) {
+    if (returnReq.type === 'return') order.orderStatus = 'Refund Completed';
+    order.paymentStatus = 'refunded';
+    order.statusHistory.push({ status: 'Refund Completed', note: `₹${returnReq.refundAmount} sent back to the customer` });
+    await order.save();
+  }
+
+  notifyUser({
+    userId: returnReq.user,
+    title: 'Refund sent',
+    message: `Your refund of ₹${returnReq.refundAmount} has been sent back to your original payment method.`,
+    type: 'refund',
+  });
+
   res.json(returnReq);
 };
