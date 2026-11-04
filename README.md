@@ -91,7 +91,7 @@
 
 ### 📊 Admin Panel
 
-<p align="center"><img src="public/screenshot-admin-order.png" alt="Admin orders" width="820"/></p>
+<p align="center"><img src="public/screenshot-admin-order-page.png" alt="Admin orders" width="820"/></p>
 <p align="center"><sub><strong>Orders</strong>: order list, status filtering, customer details, and payment tracking</sub></p>
 
 <table>
