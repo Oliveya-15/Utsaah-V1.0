@@ -96,7 +96,7 @@
 
 <table>
 <tr>
-<td width="50%"><img src="public/screenshot-admin-orders.png" alt="Admin order detail"/><p align="center"><sub><strong>Orders</strong>: verify payments and move orders through the pipeline</sub></p></td>
+<td width="50%"><img src="public/screenshot-admin-orders.png" alt="Admin order detail"/><p align="center"><sub><strong>Orders</strong>: verify or decline payments and move orders through the pipeline</sub></p></td>
 <td width="50%"><img src="public/screenshot-admin-payment-settings.png" alt="Payment settings"/><p align="center"><sub><strong>Payment Settings</strong>: switch the active UPI owner without a redeploy</sub></p></td>
 </tr>
 </table>
@@ -481,6 +481,7 @@ Utsaah-V1.0/
 | | |
 |---|---|
 | **Payments are verified by hand** | There is no gateway or automatic reconciliation. "I've Paid" is customer-reported, and the owner confirms it against their own UPI app. |
+| **Refunds are processed by hand** | The owner issues every refund from Returns & Refunds. A refund to the wallet is instant, but a refund to the original payment method is sent manually by the owner and then marked complete. |
 | **Email needs SMTP** | Without SMTP credentials, notifications still appear in the app but emails are only logged on the server. |
 | **No stock counts** | Products are made to order, so they carry an availability flag and production days rather than inventory quantities. |
 | **Kriya is quote-based** | A finalized design is a request, not an instant purchase. The owner quotes a price manually. |
@@ -528,6 +529,6 @@ Released under the **MIT License**.
 
 **Handmade with care, designed and built end to end on free-tier infrastructure.**
 
-<sub>Utsaah · Handcrafted with Zeal · 2026</sub>
+<sub>Utsaah · Handcrafted with Love · 2026</sub>
 
 </div>
